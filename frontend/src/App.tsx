@@ -1,35 +1,48 @@
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 
+/** Exact roles allowed */
+type Role = "user" | "assistant";
+
+/** Message shape */
+interface Message {
+  role: Role;
+  content: string;
+}
+
+/** Env (Vite) */
 const API_BASE = import.meta.env.VITE_BACKEND_URL as string | undefined;
 
-type Role = "user" | "assistant";
-interface Message { role: Role; content: string; }
+/** Helper: force-cast literals to our Message type */
+const asMsg = (role: Role, content: string): Message =>
+  ({ role, content } as Message);
 
 export default function App() {
+  // Explicitly type the initial array elements as Message
   const [messages, setMessages] = useState<Message[]>([
-    { role: "assistant", content: "Hey! I’m Clarity Coach. How can I help today?" },
+    asMsg("assistant", "Hey! I’m Clarity Coach. How can I help today?"),
   ]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [input, setInput] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(false);
 
-  const [sessionId] = useState(() => crypto.randomUUID());
+  const [sessionId] = useState<string>(() => crypto.randomUUID());
   const listRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [messages, loading]);
 
-  async function sendMessage() {
+  async function sendMessage(): Promise<void> {
     const text = input.trim();
     if (!text || loading) return;
 
     if (!API_BASE) {
-      setMessages(m => [...m, { role: "assistant", content: "⚠️ VITE_BACKEND_URL is not set in .env" }]);
+      setMessages((m) => [...m, asMsg("assistant", "⚠️ VITE_BACKEND_URL is not set in .env")]);
       return;
     }
 
-    const next = [...messages, { role: "user", content: text }];
+    // Force the new array to be Message[]
+    const next: Message[] = [...messages, asMsg("user", text)];
     setMessages(next);
     setInput("");
     setLoading(true);
@@ -41,18 +54,19 @@ export default function App() {
         body: JSON.stringify({ message: text, session_id: sessionId }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
       const data: { reply?: string } = await res.json();
-      setMessages([...next, { role: "assistant", content: data.reply ?? "(No reply)" }]);
+      setMessages([...next, asMsg("assistant", data.reply ?? "(No reply)")]);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setMessages([...next, { role: "assistant", content: `⚠️ Error: ${msg}` }]);
+      const e = err instanceof Error ? err.message : String(err);
+      setMessages([...next, asMsg("assistant", `⚠️ Error: ${e}`)]);
     } finally {
       setLoading(false);
     }
   }
 
-  async function clearChat() {
-    setMessages([{ role: "assistant", content: "Cleared! What should we tackle next?" }]);
+  async function clearChat(): Promise<void> {
+    setMessages([asMsg("assistant", "Cleared! What should we tackle next?")]);
     if (!API_BASE) return;
     try {
       await fetch(`${API_BASE}/reset`, {
@@ -63,7 +77,7 @@ export default function App() {
     } catch {/* non-fatal */}
   }
 
-  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>): void {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       void sendMessage();
@@ -77,21 +91,31 @@ export default function App() {
           <img alt="avatar" src="https://i.imgur.com/8Km9tLL.png" style={{ width: 36, height: 36, borderRadius: 9999 }} />
           <div style={{ fontWeight: 600, color: "#0f172a" }}>Clarity Coach</div>
           <div style={{ marginLeft: "auto" }}>
-            <button onClick={clearChat} style={{ padding: "6px 12px", borderRadius: 10, border: "1px solid #cbd5e1" }}>Clear Chat</button>
+            <button onClick={clearChat} style={{ padding: "6px 12px", borderRadius: 10, border: "1px solid #cbd5e1" }}>
+              Clear Chat
+            </button>
           </div>
         </div>
       </header>
 
       <div ref={listRef} className="border bg-white shadow-sm" style={{ flex: 1, overflowY: "auto", borderRadius: 12, padding: 12 }}>
         {messages.map((m, i) => (
-          <div key={i} className="fade-in" style={{
-            maxWidth: "80%", margin: "8px 0", padding: "8px 12px", borderRadius: 16,
-            color: m.role === "user" ? "#fff" : "#0f172a",
-            background: m.role === "user" ? "#2563eb" : "#fff",
-            border: m.role === "user" ? "none" : "1px solid #e2e8f0",
-            boxShadow: m.role === "user" ? "none" : "0 1px 2px rgba(0,0,0,0.05)",
-            marginLeft: m.role === "user" ? "auto" : 0, whiteSpace: "pre-wrap",
-          }}>
+          <div
+            key={i}
+            className="fade-in"
+            style={{
+              maxWidth: "80%",
+              margin: "8px 0",
+              padding: "8px 12px",
+              borderRadius: 16,
+              color: m.role === "user" ? "#fff" : "#0f172a",
+              background: m.role === "user" ? "#2563eb" : "#fff",
+              border: m.role === "user" ? "none" : "1px solid #e2e8f0",
+              boxShadow: m.role === "user" ? "none" : "0 1px 2px rgba(0,0,0,0.05)",
+              marginLeft: m.role === "user" ? "auto" : 0,
+              whiteSpace: "pre-wrap",
+            }}
+          >
             {m.content}
           </div>
         ))}
@@ -104,12 +128,27 @@ export default function App() {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}
           placeholder="Type your message…"
-          style={{ flex: 1, resize: "none", padding: "8px 12px", borderRadius: "12px 0 0 12px", border: "1px solid #cbd5e1", height: 44 }}
+          style={{
+            flex: 1,
+            resize: "none",
+            padding: "8px 12px",
+            borderRadius: "12px 0 0 12px",
+            border: "1px solid #cbd5e1",
+            height: 44,
+          }}
         />
         <button
           onClick={() => void sendMessage()}
           disabled={loading}
-          style={{ padding: "0 16px", borderRadius: "0 12px 12px 0", background: "#2563eb", color: "#fff", opacity: loading ? 0.6 : 1, border: "1px solid #1d4ed8", height: 44 }}
+          style={{
+            padding: "0 16px",
+            borderRadius: "0 12px 12px 0",
+            background: "#2563eb",
+            color: "#fff",
+            opacity: loading ? 0.6 : 1,
+            border: "1px solid #1d4ed8",
+            height: 44,
+          }}
         >
           Send
         </button>
@@ -117,4 +156,3 @@ export default function App() {
     </div>
   );
 }
-
