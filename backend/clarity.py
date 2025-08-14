@@ -1,12 +1,12 @@
-# clarity.py  (streaming-enabled)
+# clarity.py  (SSE optimized)
 # FastAPI backend for Clarity Coach
-# - Uses OpenAI (legacy SDK 0.28.1) via ChatCompletion (normal + streaming)
-# - CORS controlled by FRONTEND_ORIGIN
-# - In-memory sessions
-# - Speed-ups: trim history and lower temperature
-# - NEW: /chat_stream streams tokens via text/event-stream (SSE)
+# - Non-streaming: POST /chat
+# - Streaming: POST /chat_stream and POST /chat/stream (aliases)
+# - Faster perceived speed: no-buffer headers + immediate SSE heartbeat
+# - In-memory sessions; trimmed history for speed; moderate temperature
 
 import os
+import time
 from typing import Dict, List, Literal, Optional, Iterator
 
 from fastapi import FastAPI
@@ -15,17 +15,20 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import openai  # openai==0.28.1
 
-# ---------- Configuration ----------
+# ---------- Config ----------
 openai.api_key = os.getenv("OPENAI_API_KEY")
 MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
-# How many prior turns to keep (smaller = faster/cheaper)
-MAX_HISTORY_MESSAGES = 6
-# Lower temperature = snappier
+# Keep fewer past turns -> smaller prompt -> faster responses
+MAX_HISTORY_MESSAGES = 4
+
+# Lower temperature -> snappier, more deterministic
 TEMPERATURE = 0.4
-# Optional timeout (seconds)
+
+# Stop waiting forever on upstream
 REQUEST_TIMEOUT = 20
-# CORS: set to your frontend URL on Render; "*" only for testing
+
+# CORS: lock to your frontend URL in Render (set FRONTEND_ORIGIN there)
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "*")
 
 SYSTEM_PROMPT = (
@@ -33,8 +36,8 @@ SYSTEM_PROMPT = (
     "Answer clearly, step-by-step when asked, and prefer practical guidance."
 )
 
-# ---------- FastAPI app ----------
-app = FastAPI(title="Clarity Coach Backend", version="1.1.0")
+# ---------- App ----------
+app = FastAPI(title="Clarity Coach Backend", version="1.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -44,7 +47,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------- Data models ----------
+# ---------- Models ----------
 Role = Literal["user", "assistant"]
 
 class ChatRequest(BaseModel):
@@ -57,14 +60,14 @@ class ChatResponse(BaseModel):
 class ResetRequest(BaseModel):
     session_id: Optional[str] = "default"
 
-# ---------- In-memory session store ----------
+# ---------- In-memory store ----------
 # session_id -> list[{"role": "user"|"assistant", "content": "..."}]
 SESSIONS: Dict[str, List[Dict[str, str]]] = {}
 
-def get_session(session_id: str) -> List[Dict[str, str]]:
+def session_history(session_id: str) -> List[Dict[str, str]]:
     return SESSIONS.setdefault(session_id, [])
 
-# ---------- Routes (non-streaming, unchanged) ----------
+# ---------- Routes ----------
 @app.get("/")
 def root():
     return {"service": "clarity-backend", "ok": True, "docs": "/docs", "health": "/health"}
@@ -74,7 +77,7 @@ def health():
     return {"status": "ok", "model": MODEL}
 
 @app.post("/reset")
-def reset_session(req: ResetRequest):
+def reset(req: ResetRequest):
     SESSIONS[req.session_id or "default"] = []
     return {"ok": True}
 
@@ -84,57 +87,61 @@ def chat(req: ChatRequest):
     if not openai.api_key:
         return ChatResponse(reply="⚠️ Server missing OPENAI_API_KEY.")
 
-    session_id = req.session_id or "default"
-    history = get_session(session_id)
+    sid = req.session_id or "default"
+    hist = session_history(sid)
 
-    history.append({"role": "user", "content": req.message})
-    trimmed = history[-MAX_HISTORY_MESSAGES:]
-
+    hist.append({"role": "user", "content": req.message})
+    trimmed = hist[-MAX_HISTORY_MESSAGES:]
     messages = [{"role": "system", "content": SYSTEM_PROMPT}, *trimmed]
 
     try:
-        completion = openai.ChatCompletion.create(
+        out = openai.ChatCompletion.create(
             model=MODEL,
             messages=messages,
             temperature=TEMPERATURE,
             max_tokens=256,
             request_timeout=REQUEST_TIMEOUT,
         )
-        reply = completion["choices"][0]["message"]["content"].strip()
+        reply = out["choices"][0]["message"]["content"].strip()
     except Exception as e:
         reply = f"⚠️ Upstream error: {e}"
 
-    history.append({"role": "assistant", "content": reply})
-    SESSIONS[session_id] = history[-MAX_HISTORY_MESSAGES:]
+    hist.append({"role": "assistant", "content": reply})
+    SESSIONS[sid] = hist[-MAX_HISTORY_MESSAGES:]
     return ChatResponse(reply=reply)
 
-# ---------- NEW: Streaming chat ----------
-@app.post("/chat_stream")
-def chat_stream(req: ChatRequest):
-    """
-    Streams tokens as Server-Sent Events (SSE).
-    - Request body: {"message": "...", "session_id": "abc"}
-    - Response: text/event-stream with lines like "data: token\n\n"
-      and a final "data: [DONE]\n\n"
-    """
+def _sse_response(gen: Iterator[bytes]) -> StreamingResponse:
+    # Headers that discourage buffering anywhere in the path
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",  # Nginx reverse proxies
+    }
+    return StreamingResponse(gen, media_type="text/event-stream", headers=headers)
+
+def _chat_stream_impl(req: ChatRequest) -> StreamingResponse:
     if not openai.api_key:
         def err_gen() -> Iterator[bytes]:
-            yield b"data: \xe2\x9a\xa0\xef\xb8\x8f Server missing OPENAI_API_KEY.\n\n"
+            yield b"data: \xE2\x9A\xA0\xEF\xB8\x8F Server missing OPENAI_API_KEY.\n\n"
             yield b"data: [DONE]\n\n"
-        return StreamingResponse(err_gen(), media_type="text/event-stream")
+        return _sse_response(err_gen())
 
-    session_id = req.session_id or "default"
-    history = get_session(session_id)
+    sid = req.session_id or "default"
+    hist = session_history(sid)
 
-    # Append user
-    history.append({"role": "user", "content": req.message})
-    trimmed = history[-MAX_HISTORY_MESSAGES:]
+    # Append user turn
+    hist.append({"role": "user", "content": req.message})
+    trimmed = hist[-MAX_HISTORY_MESSAGES:]
     messages = [{"role": "system", "content": SYSTEM_PROMPT}, *trimmed]
 
-    def event_stream() -> Iterator[bytes]:
-        reply_accum = []
+    def gen() -> Iterator[bytes]:
+        reply_parts: List[str] = []
+
+        # 1) Immediately send an SSE comment heartbeat so the browser starts rendering right away.
+        # Lines that start with ":" are SSE comments; your frontend ignores them.
+        yield b": heartbeat\n\n"
+
         try:
-            # stream=True yields incremental chunks
             stream = openai.ChatCompletion.create(
                 model=MODEL,
                 messages=messages,
@@ -143,25 +150,39 @@ def chat_stream(req: ChatRequest):
                 request_timeout=REQUEST_TIMEOUT,
                 stream=True,
             )
+            last_flush = time.time()
+
             for chunk in stream:
-                # Each chunk carries a small delta; extract if present
                 delta = chunk["choices"][0]["delta"]
                 token = delta.get("content") if delta else None
                 if token:
-                    reply_accum.append(token)
-                    # SSE frame: "data: <token>\n\n"
+                    reply_parts.append(token)
+                    # Send token frame
                     yield f"data: {token}\n\n".encode("utf-8")
+
+                    # Optional: micro-throttle flush to keep small chunks flowing smoothly
+                    # (no sleep needed; just ensure we yield frequently)
+                    now = time.time()
+                    if now - last_flush > 0.1:
+                        last_flush = now
+                        # yielding already flushes
+
         except Exception as e:
             yield f"data: ⚠️ Upstream error: {e}\n\n".encode("utf-8")
         finally:
-            # Save the assistant's full reply to history
-            full_reply = "".join(reply_accum).strip()
-            if full_reply:
-                history.append({"role": "assistant", "content": full_reply})
-                SESSIONS[session_id] = history[-MAX_HISTORY_MESSAGES:]
-            # End of stream marker
+            full = "".join(reply_parts).strip()
+            if full:
+                hist.append({"role": "assistant", "content": full})
+                SESSIONS[sid] = hist[-MAX_HISTORY_MESSAGES:]
             yield b"data: [DONE]\n\n"
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    return _sse_response(gen())
 
+# Streaming endpoints (both paths supported)
+@app.post("/chat_stream")
+def chat_stream(req: ChatRequest):
+    return _chat_stream_impl(req)
 
+@app.post("/chat/stream")
+def chat_stream_alias(req: ChatRequest):
+    return _chat_stream_impl(req)
