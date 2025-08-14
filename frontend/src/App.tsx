@@ -10,46 +10,48 @@ interface Message {
   content: string;
 }
 
-/** Env (Vite) */
+/** Backend URL (from Vite env) */
 const API_BASE = import.meta.env.VITE_BACKEND_URL as string | undefined;
 
-/** Helper: force-cast literals to our Message type */
-const asMsg = (role: Role, content: string): Message =>
-  ({ role, content } as Message);
+/** Strongly-typed helper to create messages */
+const mk = (role: Role, content: string): Message => ({ role, content });
 
 export default function App() {
-  // Chat state
+  // Initial greeting for recruiters
   const [messages, setMessages] = useState<Message[]>([
-    asMsg("assistant", "Hey! I’m Clarity Coach. How can I help today?"),
+    mk(
+      "assistant",
+      "Welcome to the Clarity Coach demo. Ask anything and I’ll respond clearly and quickly."
+    ),
   ]);
   const [input, setInput] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
 
-  // Unique session for backend context
+  // One session id per tab to preserve context
   const [sessionId] = useState<string>(() => crypto.randomUUID());
-  const listRef = useRef<HTMLDivElement | null>(null);
 
-  /** Auto-scroll when new messages come in */
+  // Auto-scroll to the latest message / indicator
+  const listRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [messages, loading]);
 
-  /** Send a message to backend */
+  /** Send message to backend with instant typing indicator (faster perceived speed) */
   async function sendMessage(): Promise<void> {
     const text = input.trim();
     if (!text || loading) return;
 
     if (!API_BASE) {
-      setMessages((m) => [
-        ...m,
-        asMsg("assistant", "⚠️ VITE_BACKEND_URL is not set in .env"),
-      ]);
+      setMessages((m) => [...m, mk("assistant", "⚠️ VITE_BACKEND_URL is not set in .env")]);
       return;
     }
 
-    const next: Message[] = [...messages, asMsg("user", text)];
+    // Show user's message immediately
+    const next = [...messages, mk("user", text)];
     setMessages(next);
     setInput("");
+
+    // Show typing indicator immediately for snappier UX
     setLoading(true);
 
     try {
@@ -61,21 +63,18 @@ export default function App() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const data: { reply?: string } = await res.json();
-      setMessages([
-        ...next,
-        asMsg("assistant", data.reply ?? "(No reply from backend)"),
-      ]);
+      setMessages([...next, mk("assistant", data.reply ?? "(No reply)")]);
     } catch (err: unknown) {
-      const e = err instanceof Error ? err.message : String(err);
-      setMessages([...next, asMsg("assistant", `⚠️ Error: ${e}`)]);
+      const msg = err instanceof Error ? err.message : String(err);
+      setMessages([...next, mk("assistant", `⚠️ Error: ${msg}`)]);
     } finally {
       setLoading(false);
     }
   }
 
-  /** Reset messages and backend context */
+  /** Clear chat UI and (optionally) reset server session */
   async function clearChat(): Promise<void> {
-    setMessages([asMsg("assistant", "Cleared! What should we tackle next?")]);
+    setMessages([mk("assistant", "Chat cleared. What should we tackle next?")]);
     if (!API_BASE) return;
     try {
       await fetch(`${API_BASE}/reset`, {
@@ -88,7 +87,7 @@ export default function App() {
     }
   }
 
-  /** Enter key sends message unless Shift+Enter */
+  /** Enter sends, Shift+Enter makes new line */
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>): void {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -96,128 +95,154 @@ export default function App() {
     }
   }
 
-  return (
-    // Outer wrapper to center chat both vertically & horizontally
-    <div
-      className="flex items-center justify-center h-screen w-screen"
-      style={{ background: "#f8fafc" }}
-    >
-      {/* Chat container */}
-      <div
-        className="flex flex-col w-full max-w-2xl h-[90vh] p-4"
-        style={{
-          gap: 12,
-          background: "#ffffff",
-          borderRadius: 12,
-          boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-        }}
-      >
-        {/* Header */}
-        <header
-          style={{
-            position: "sticky",
-            top: 0,
-            zIndex: 10,
-            background: "rgba(255,255,255,0.7)",
-            backdropFilter: "blur(6px)",
-            borderBottom: "1px solid #e2e8f0",
-            padding: "12px 16px",
-            borderRadius: 12,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <img
-              alt="avatar"
-              src="https://i.imgur.com/8Km9tLL.png"
-              style={{ width: 36, height: 36, borderRadius: 9999 }}
-            />
-            <div style={{ fontWeight: 600, color: "#0f172a" }}>
-              Clarity Coach — Demo by James Ikahu
-            </div>
-            <div style={{ marginLeft: "auto" }}>
-              <button
-                onClick={clearChat}
-                style={{
-                  padding: "6px 12px",
-                  borderRadius: 10,
-                  border: "1px solid #cbd5e1",
-                }}
-              >
-                Clear Chat
-              </button>
-            </div>
-          </div>
-        </header>
+  // ---- Inline styles (all strings to keep TS/esbuild happy) ----
+  const page: React.CSSProperties = {
+    minHeight: "100vh",
+    display: "grid",
+    placeItems: "center",
+    background: "#f8fafc",
+    padding: "16px",
+  };
 
-        {/* Chat messages */}
-        <div
-          ref={listRef}
-          className="border bg-white shadow-sm flex-1"
-          style={{
-            overflowY: "auto",
-            borderRadius: 12,
-            padding: 12,
-          }}
-        >
-          {messages.map((m, i) => (
+  const card: React.CSSProperties = {
+    width: "100%",
+    maxWidth: "760px",
+    height: "86vh",
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
+    background: "#ffffff",
+    borderRadius: "16px",
+    boxShadow: "0 8px 28px rgba(2, 8, 20, 0.06)",
+    padding: "16px",
+  };
+
+  const header: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    borderBottom: "1px solid #e2e8f0",
+    paddingBottom: "8px",
+  };
+
+  const avatar: React.CSSProperties = {
+    width: "36px",
+    height: "36px",
+    borderRadius: "9999px",
+  };
+
+  const list: React.CSSProperties = {
+    flex: 1,
+    overflowY: "auto",
+    border: "1px solid #e2e8f0",
+    borderRadius: "12px",
+    padding: "12px",
+    background: "#f8fafb",
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+  };
+
+  const inputRow: React.CSSProperties = { display: "flex", gap: "8px" };
+
+  const inputBox: React.CSSProperties = {
+    flex: 1,
+    resize: "none",
+    padding: "10px 12px",
+    borderRadius: "12px",
+    border: "1px solid #cbd5e1",
+    height: "46px",
+    lineHeight: "24px",
+  };
+
+  const sendBtn: React.CSSProperties = {
+    padding: "0 16px",
+    borderRadius: "12px",
+    background: "#2563eb",
+    color: "#ffffff",
+    border: "1px solid #1d4ed8",
+    opacity: loading ? 0.7 : 1,
+    height: "46px",
+  };
+
+  return (
+    <div style={page}>
+      <div style={card}>
+        {/* Top bar */}
+        <div style={header}>
+          <img alt="avatar" src="https://i.imgur.com/8Km9tLL.png" style={avatar} />
+          <div style={{ fontWeight: 700, color: "#0f172a" }}>Clarity Coach — Demo by James Ikahu</div>
+          <button
+            onClick={clearChat}
+            style={{
+              marginLeft: "auto",
+              padding: "6px 12px",
+              borderRadius: "10px",
+              border: "1px solid #cbd5e1",
+              background: "#f1f5f9",
+            }}
+          >
+            Clear Chat
+          </button>
+        </div>
+
+        {/* Messages */}
+        <div ref={listRef} style={list}>
+          {messages.map((m, i) => {
+            const isUser = m.role === "user";
+            const bubble: React.CSSProperties = {
+              maxWidth: "78%",
+              padding: "10px 14px",
+              borderRadius: "16px",
+              color: isUser ? "#ffffff" : "#0f172a",
+              background: isUser ? "#2563eb" : "#ffffff",
+              border: isUser ? "none" : "1px solid #e2e8f0",
+              boxShadow: isUser ? "none" : "0 2px 6px rgba(0,0,0,0.05)",
+              whiteSpace: "pre-wrap",
+              alignSelf: isUser ? "flex-end" : "flex-start",
+              animation: "msgIn 160ms ease-out",
+            };
+            return (
+              <div key={i} className="msg" style={bubble}>
+                {m.content}
+              </div>
+            );
+          })}
+
+          {/* Typing indicator bubble (assistant, left) */}
+          {loading && (
             <div
-              key={i}
-              className="fade-in"
+              className="msg"
               style={{
-                maxWidth: "80%",
-                margin: "8px auto", // Center bubbles horizontally
-                padding: "8px 12px",
-                borderRadius: 16,
-                color: m.role === "user" ? "#fff" : "#0f172a",
-                background: m.role === "user" ? "#2563eb" : "#fff",
-                border: m.role === "user" ? "none" : "1px solid #e2e8f0",
-                boxShadow:
-                  m.role === "user"
-                    ? "none"
-                    : "0 1px 2px rgba(0,0,0,0.05)",
-                whiteSpace: "pre-wrap",
-                textAlign: "center",
+                maxWidth: "58%",
+                padding: "10px 14px",
+                borderRadius: "16px",
+                background: "#ffffff",
+                border: "1px solid #e2e8f0",
+                boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
+                alignSelf: "flex-start",
+                animation: "msgIn 160ms ease-out",
               }}
             >
-              {m.content}
-            </div>
-          ))}
-          {loading && (
-            <div style={{ color: "#64748b", textAlign: "center" }}>
-              Thinking…
+              <span className="typing">
+                <span className="dot" />
+                <span className="dot" />
+                <span className="dot" />
+              </span>
             </div>
           )}
         </div>
 
-        {/* Input area */}
-        <div style={{ display: "flex", gap: 8 }}>
+        {/* Input */}
+        <div style={inputRow}>
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder="Type your message…"
-            style={{
-              flex: 1,
-              resize: "none",
-              padding: "8px 12px",
-              borderRadius: "12px 0 0 12px",
-              border: "1px solid #cbd5e1",
-              height: 44,
-            }}
+            style={inputBox}
           />
-          <button
-            onClick={() => void sendMessage()}
-            disabled={loading}
-            style={{
-              padding: "0 16px",
-              borderRadius: "0 12px 12px 0",
-              background: "#2563eb",
-              color: "#fff",
-              opacity: loading ? 0.6 : 1,
-              border: "1px solid #1d4ed8",
-              height: 44,
-            }}
-          >
+          <button onClick={() => void sendMessage()} disabled={loading} style={sendBtn}>
             Send
           </button>
         </div>
@@ -225,4 +250,5 @@ export default function App() {
     </div>
   );
 }
+
 
