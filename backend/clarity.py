@@ -19,6 +19,11 @@ logger = logging.getLogger("uvicorn")
 
 app = FastAPI(title="Clarity Coach Lite API", version="0.2.0")
 
+@app.get("/")
+def root():
+    return {"service": "clarity-backend", "ok": True, "docs": "/docs", "health": "/health"}
+
+
 # Simple in-memory session store:
 # { session_id: [ {"role": "user"/"assistant", "content": "..."} , ... ] }
 SESSIONS: Dict[str, List[Dict[str, str]]] = {}
