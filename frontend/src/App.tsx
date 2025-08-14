@@ -74,7 +74,9 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id: sessionId }),
       });
-    } catch {/* non-fatal */}
+    } catch {
+      /* non-fatal */
+    }
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>): void {
@@ -85,73 +87,107 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col h-screen max-w-2xl mx-auto p-4" style={{ gap: 12, background: "#f8fafc" }}>
-      <header style={{ position: "sticky", top: 0, zIndex: 10, background: "rgba(255,255,255,0.7)", backdropFilter: "blur(6px)", borderBottom: "1px solid #e2e8f0", padding: "12px 16px", borderRadius: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <img alt="avatar" src="https://i.imgur.com/8Km9tLL.png" style={{ width: 36, height: 36, borderRadius: 9999 }} />
-          <div style={{ fontWeight: 600, color: "#0f172a" }}>Clarity Coach</div>
-          <div style={{ marginLeft: "auto" }}>
-            <button onClick={clearChat} style={{ padding: "6px 12px", borderRadius: 10, border: "1px solid #cbd5e1" }}>
-              Clear Chat
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <div ref={listRef} className="border bg-white shadow-sm" style={{ flex: 1, overflowY: "auto", borderRadius: 12, padding: 12 }}>
-        {messages.map((m, i) => (
-          <div
-            key={i}
-            className="fade-in"
-            style={{
-              maxWidth: "80%",
-              margin: "8px 0",
-              padding: "8px 12px",
-              borderRadius: 16,
-              color: m.role === "user" ? "#fff" : "#0f172a",
-              background: m.role === "user" ? "#2563eb" : "#fff",
-              border: m.role === "user" ? "none" : "1px solid #e2e8f0",
-              boxShadow: m.role === "user" ? "none" : "0 1px 2px rgba(0,0,0,0.05)",
-              marginLeft: m.role === "user" ? "auto" : 0,
-              whiteSpace: "pre-wrap",
-            }}
-          >
-            {m.content}
-          </div>
-        ))}
-        {loading && <div style={{ color: "#64748b" }}>Thinking…</div>}
-      </div>
-
-      <div style={{ display: "flex", gap: 8 }}>
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder="Type your message…"
+    // Full-page centered wrapper
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "grid",
+        placeItems: "center",
+        background: "#f8fafc",
+        padding: 16,
+      }}
+    >
+      {/* Chat card */}
+      <div style={{ width: "100%", maxWidth: 720, display: "flex", flexDirection: "column", gap: 12 }}>
+        <header
           style={{
-            flex: 1,
-            resize: "none",
-            padding: "8px 12px",
-            borderRadius: "12px 0 0 12px",
-            border: "1px solid #cbd5e1",
-            height: 44,
-          }}
-        />
-        <button
-          onClick={() => void sendMessage()}
-          disabled={loading}
-          style={{
-            padding: "0 16px",
-            borderRadius: "0 12px 12px 0",
-            background: "#2563eb",
-            color: "#fff",
-            opacity: loading ? 0.6 : 1,
-            border: "1px solid #1d4ed8",
-            height: 44,
+            position: "sticky",
+            top: 0,
+            zIndex: 10,
+            background: "rgba(255,255,255,0.9)",
+            backdropFilter: "blur(6px)",
+            border: "1px solid #e2e8f0",
+            padding: "12px 16px",
+            borderRadius: 12,
           }}
         >
-          Send
-        </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <img
+              alt="avatar"
+              src="https://i.imgur.com/8Km9tLL.png"
+              style={{ width: 36, height: 36, borderRadius: 9999 }}
+            />
+            <div style={{ fontWeight: 600, color: "#0f172a" }}>Clarity Coach</div>
+            <div style={{ marginLeft: "auto" }}>
+              <button
+                onClick={clearChat}
+                style={{ padding: "6px 12px", borderRadius: 10, border: "1px solid #cbd5e1" }}
+              >
+                Clear Chat
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <div
+          ref={listRef}
+          className="border bg-white shadow-sm"
+          style={{ height: "60vh", overflowY: "auto", borderRadius: 12, padding: 12 }}
+        >
+          {messages.map((m, i) => (
+            <div
+              key={i}
+              className="fade-in"
+              style={{
+                maxWidth: "80%",
+                margin: "8px 0",
+                padding: "8px 12px",
+                borderRadius: 16,
+                color: m.role === "user" ? "#fff" : "#0f172a",
+                background: m.role === "user" ? "#2563eb" : "#fff",
+                border: m.role === "user" ? "none" : "1px solid #e2e8f0",
+                boxShadow: m.role === "user" ? "none" : "0 1px 2px rgba(0,0,0,0.05)",
+                marginLeft: m.role === "user" ? "auto" : 0,
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {m.content}
+            </div>
+          ))}
+          {loading && <div style={{ color: "#64748b" }}>Thinking…</div>}
+        </div>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder="Type your message…"
+            style={{
+              flex: 1,
+              resize: "none",
+              padding: "8px 12px",
+              borderRadius: "12px 0 0 12px",
+              border: "1px solid "#cbd5e1",
+              height: 44,
+            }}
+          />
+          <button
+            onClick={() => void sendMessage()}
+            disabled={loading}
+            style={{
+              padding: "0 16px",
+              borderRadius: "0 12px 12px 0",
+              background: "#2563eb",
+              color: "#fff",
+              opacity: loading ? 0.6 : 1,
+              border: "1px solid "#1d4ed8",
+              height: 44,
+            }}
+          >
+            Send
+          </button>
+        </div>
       </div>
     </div>
   );
