@@ -57,5 +57,17 @@ body, #root { min-height: 100vh; margin: 0; }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(100, 116, 139, 0.55);
 }
+@keyframes msgIn {
+  0% { opacity: 0; transform: translateY(4px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.msg { will-change: transform, opacity; }
+
+.typing { display: inline-flex; gap: 6px; align-items: center; }
+.dot { width: 6px; height: 6px; border-radius: 9999px; background: #64748b; animation: dotBlink 1.2s infinite ease-in-out; opacity: 0.25; }
+.dot:nth-child(2) { animation-delay: 0.2s; }
+.dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dotBlink { 0%,80%,100% { opacity: .25; transform: translateY(0);} 40% { opacity: 1; transform: translateY(-1px);} }
+
 
 
