@@ -7,9 +7,18 @@ interface Message { role: Role; content: string; }
 const API_BASE = import.meta.env.VITE_BACKEND_URL as string | undefined;
 const mk = (role: Role, content: string): Message => ({ role, content });
 
+const GREETING = [
+  "Hi! I’m Clarity Coach — a real-time AI assistant prototype by **James Ikahu**.",
+  "",
+  "Quick Tips:",
+  "• Ask anything practical (e.g., “Give me a 3-step plan to…”, “Summarize…”).",
+  "• Press Enter to send; Shift+Enter for a new line.",
+  "• Click ‘Clear Chat’ to reset this session.",
+].join("\n");
+
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([
-    mk("assistant", "Welcome to the Clarity Coach demo. Ask anything and I’ll respond clearly and quickly."),
+    mk("assistant", GREETING),
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -37,12 +46,17 @@ export default function App() {
     try {
       const res = await fetch(`${API_BASE}/chat/stream`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        mode: "cors",
+        credentials: "omit",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "text/event-stream",
+        },
         body: JSON.stringify({ message: text, session_id: sessionId }),
       });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
 
-      // placeholder assistant message for live updates
+      // placeholder assistant message we’ll update live
       let assistantText = "";
       setMessages((m) => [...m, mk("assistant", "")]);
 
@@ -54,22 +68,15 @@ export default function App() {
         if (done) break;
 
         const chunk = decoder.decode(value, { stream: true });
-        // handle multiple lines per chunk
-        const lines = chunk.split("\n");
-
-        for (const raw of lines) {
+        for (const raw of chunk.split("\n")) {
           const line = raw.trimEnd();
           if (!line.startsWith("data: ")) continue;
 
           const payload = line.slice("data: ".length);
-
-          // Ignore SSE comment heartbeats (they start with ":"; already filtered by startsWith)
-          // Parse JSON payload so \n is preserved
           let token: string;
           try {
-            token = JSON.parse(payload);
+            token = JSON.parse(payload); // JSON tokens preserve spaces/newlines
           } catch {
-            // If something odd arrives, skip it safely
             continue;
           }
 
@@ -78,10 +85,7 @@ export default function App() {
             break readLoop;
           }
 
-          // Append token exactly as sent (includes spaces & newlines)
           assistantText += token;
-
-          // Update the last assistant message live
           setMessages((m) => {
             const copy = m.slice();
             const last = copy.length - 1;
@@ -123,19 +127,24 @@ export default function App() {
   const page: React.CSSProperties = { minHeight: "100vh", display: "grid", placeItems: "center", background: "#f8fafc", padding: "16px" };
   const card: React.CSSProperties = { width: "100%", maxWidth: "760px", height: "86vh", display: "flex", flexDirection: "column", gap: "12px", background: "#ffffff", borderRadius: "16px", boxShadow: "0 8px 28px rgba(2, 8, 20, 0.06)", padding: "16px" };
   const header: React.CSSProperties = { display: "flex", alignItems: "center", gap: "12px", borderBottom: "1px solid #e2e8f0", paddingBottom: "8px" };
+  const subHeader: React.CSSProperties = { fontSize: "12px", color: "#475569" };
   const avatar: React.CSSProperties = { width: "36px", height: "36px", borderRadius: "9999px" };
   const list: React.CSSProperties = { flex: 1, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: "12px", padding: "12px", background: "#f8fafb", display: "flex", flexDirection: "column", gap: "8px", whiteSpace: "pre-wrap" };
   const inputRow: React.CSSProperties = { display: "flex", gap: "8px" };
   const inputBox: React.CSSProperties = { flex: 1, resize: "none", padding: "10px 12px", borderRadius: "12px", border: "1px solid #cbd5e1", height: "46px", lineHeight: "24px" };
   const sendBtn: React.CSSProperties = { padding: "0 16px", borderRadius: "12px", background: "#2563eb", color: "#ffffff", border: "1px solid #1d4ed8", opacity: loading ? 0.7 : 1, height: "46px" };
+  const footer: React.CSSProperties = { marginTop: "8px", fontSize: "12px", color: "#64748b", display: "flex", justifyContent: "space-between", alignItems: "center" };
 
   return (
     <div style={page}>
       <div style={card}>
-        {/* Header with your demo label */}
+        {/* Header */}
         <div style={header}>
           <img alt="avatar" src="https://i.imgur.com/8Km9tLL.png" style={avatar} />
-          <div style={{ fontWeight: 700, color: "#0f172a" }}>Clarity Coach — Demo by James Ikahu</div>
+          <div>
+            <div style={{ fontWeight: 700, color: "#0f172a" }}>Clarity Coach — Prototype by James Ikahu</div>
+            <div style={subHeader}>Real-time AI assistant (demo)</div>
+          </div>
           <button onClick={clearChat} style={{ marginLeft: "auto", padding: "6px 12px", borderRadius: "10px", border: "1px solid #cbd5e1", background: "#f1f5f9" }}>
             Clear Chat
           </button>
@@ -178,13 +187,13 @@ export default function App() {
           <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={onKeyDown} placeholder="Type your message…" style={inputBox} />
           <button onClick={() => void sendMessage()} disabled={loading} style={sendBtn}>Send</button>
         </div>
+
+        {/* Footer note */}
+        <div style={footer}>
+          <span>Early prototype — responses may vary.</span>
+          <a href="mailto:jikahu@gmail.com" style={{ textDecoration: "none", color: "#2563eb" }}>Contact</a>
+        </div>
       </div>
     </div>
   );
 }
-
-
-
-
-
-
